@@ -18,6 +18,7 @@ const errorHandler = require("./src/middleware/errorHandler");
 // Import route files
 const adminRoutes = require("./src/routes/admin.routes");
 const categoryRoutes = require("./src/routes/category.routes");
+const productRoutes = require("./src/routes/product.routes");
 
 const app = express();
 
@@ -50,6 +51,7 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/admins", adminRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/products", productRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

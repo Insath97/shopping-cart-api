@@ -17,29 +17,40 @@ const logger = winston.createLogger({
   ),
   defaultMeta: { service: 'shopping-cart-api' },
   transports: [
-    // Write all logs with level 'info' and below to 'combined.log'
+    // Write ONLY 'info' level logs to combined.log
     new winston.transports.DailyRotateFile({
       filename: 'logs/combined-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
       maxSize: '20m',
       maxFiles: '14d',
-      level: 'info'
+      level: 'info' // This captures info AND higher levels
     }),
+    
     // Write all logs with level 'error' and below to 'error.log'
     new winston.transports.DailyRotateFile({
       filename: 'logs/error-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
       maxSize: '20m',
       maxFiles: '14d',
-      level: 'error'
+      level: 'error' // This captures only errors
     }),
+    
     // Write HTTP requests to a separate file
     new winston.transports.DailyRotateFile({
       filename: 'logs/requests-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
       maxSize: '20m',
       maxFiles: '14d',
-      level: 'http'
+      level: 'http' // This captures only http level
+    }),
+    
+    // Add a separate transport for debug logs if needed
+    new winston.transports.DailyRotateFile({
+      filename: 'logs/debug-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '7d',
+      level: 'debug' // This captures debug and higher
     })
   ]
 });
@@ -62,5 +73,4 @@ logger.stream = {
   }
 };
 
-// Make sure to export the logger instance
 module.exports = logger;

@@ -1,22 +1,39 @@
+const Product = require("../models/product.model");
 const Category = require("../models/category.model");
 const slugify = require("slugify");
 const { Op } = require("sequelize");
 const { logger } = require("../middleware/logger");
 
-// Create category
-exports.createCategory = async (req, res, next) => {
+// Create product
+exports.createProduct = async (req, res, next) => {
   try {
-    const categoryData = req.body;
+    const productData = req.body;
 
-    const category = await Category.create(categoryData);
+    // Generate slug if not provided
+    if (productData.name && !productData.slug) {
+      productData.slug = slugify(productData.name, {
+        lower: true,
+        strict: true,
+        remove: /[*+~.()'"!:@]/g,
+      });
+    }
+
+    const product = await Product.create(productData);
+
+    // Include category data in response
+    const productWithCategory = await Product.findByPk(product.id, {
+      include: [
+        { association: "category", attributes: ["id", "name", "slug"] },
+      ],
+    });
 
     return res.status(201).json({
       success: true,
-      message: "Category created successfully",
-      data: category,
+      message: "Product created successfully",
+      data: productWithCategory,
     });
   } catch (error) {
-    logger.error("Create category error", {
+    logger.error("Create product error", {
       error: error.message,
       data: req.body,
       stack: error.stack,
@@ -25,13 +42,18 @@ exports.createCategory = async (req, res, next) => {
   }
 };
 
-// Get all categories
-exports.getAllCategories = async (req, res, next) => {
+// Get all products
+exports.getAllProducts = async (req, res, next) => {
   try {
     const {
       page = 1,
       limit = 10,
       search,
+      categoryId,
+      inStock,
+      minPrice,
+      maxPrice,
+      unitType,
       isActive,
       includeInactive = false,
       includeDeleted = false,
@@ -51,28 +73,56 @@ exports.getAllCategories = async (req, res, next) => {
       where.isActive = true;
     }
 
+    // Category filter
+    if (categoryId) {
+      where.categoryId = parseInt(categoryId);
+    }
+
+    // Stock filter
+    if (inStock !== undefined) {
+      where.inStock = inStock === "true";
+    }
+
+    // Price range filter
+    if (minPrice || maxPrice) {
+      where.price = {};
+      if (minPrice) where.price[Op.gte] = parseFloat(minPrice);
+      if (maxPrice) where.price[Op.lte] = parseFloat(maxPrice);
+    }
+
+    // Unit type filter
+    if (unitType) {
+      where.unitType = unitType;
+    }
+
     // Search filter
     if (search) {
       where[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
         { slug: { [Op.iLike]: `%${search}%` } },
         { description: { [Op.iLike]: `%${search}%` } },
+        { shortDescription: { [Op.iLike]: `%${search}%` } },
+        { brand: { [Op.iLike]: `%${search}%` } },
+        { barcode: { [Op.iLike]: `%${search}%` } },
       ];
     }
 
-    // Find all categories with pagination
-    const { count, rows: categories } = await Category.findAndCountAll({
+    // Find all products with pagination
+    const { count, rows: products } = await Product.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset: offset,
       order: [[sortBy, sortOrder.toUpperCase()]],
       paranoid: !includeDeleted,
+      include: [
+        { association: "category", attributes: ["id", "name", "slug"] },
+      ],
     });
 
     return res.status(200).json({
       success: true,
       data: {
-        categories,
+        products,
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(count / parseInt(limit)),
@@ -95,6 +145,11 @@ exports.getAllCategories = async (req, res, next) => {
         },
         filters: {
           search,
+          categoryId,
+          inStock,
+          minPrice,
+          maxPrice,
+          unitType,
           isActive,
           includeInactive,
           includeDeleted,
@@ -102,7 +157,7 @@ exports.getAllCategories = async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error("Get all categories error", {
+    logger.error("Get all products error", {
       error: error.message,
       query: req.query,
     });
@@ -110,42 +165,47 @@ exports.getAllCategories = async (req, res, next) => {
   }
 };
 
-// Get category by ID
-exports.getCategoryById = async (req, res, next) => {
+// Get product by ID
+exports.getProductById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { includeDeleted = false } = req.query;
 
-    const category = await Category.findOne({
+    const product = await Product.findOne({
       where: { id },
+      paranoid: !includeDeleted,
+      include: [
+        { association: "category", attributes: ["id", "name", "slug"] },
+      ],
     });
 
-    if (!category) {
+    if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Category not found",
+        message: "Product not found",
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: category,
+      data: product,
     });
   } catch (error) {
-    logger.error("Get category by ID error", {
+    logger.error("Get product by ID error", {
       error: error.message,
-      categoryId: req.params.id,
+      productId: req.params.id,
     });
     next(error);
   }
 };
 
-// Update category
-exports.updateCategory = async (req, res, next) => {
+// Update product
+exports.updateProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
 
+    // Generate slug if name is updated and slug is not provided
     if (updateData.name && !updateData.slug) {
       updateData.slug = slugify(updateData.name, {
         lower: true,
@@ -154,95 +214,102 @@ exports.updateCategory = async (req, res, next) => {
       });
     }
 
-    const category = await Category.findOne({ where: { id } });
+    const product = await Product.findOne({ where: { id } });
 
-    if (!category) {
+    if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Category not found",
+        message: "Product not found",
       });
     }
 
-    await category.update(updateData);
+    await product.update(updateData);
+
+    // Fetch updated product with category
+    const updatedProduct = await Product.findByPk(product.id, {
+      include: [
+        { association: "category", attributes: ["id", "name", "slug"] },
+      ],
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Category updated successfully",
-      data: category,
+      message: "Product updated successfully",
+      data: updatedProduct,
     });
   } catch (error) {
-    logger.error("Update category error", {
+    logger.error("Update product error", {
       error: error.message,
-      categoryId: req.params.id,
+      productId: req.params.id,
     });
     next(error);
   }
 };
 
-// Delete category (soft delete)
-exports.deleteCategory = async (req, res, next) => {
+// Delete product (soft delete)
+exports.deleteProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const category = await Category.findOne({ where: { id } });
+    const product = await Product.findOne({ where: { id } });
 
-    if (!category) {
+    if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Category not found",
+        message: "Product not found",
       });
     }
 
-    await category.destroy();
+    await product.destroy();
 
     return res.status(200).json({
       success: true,
-      message: "Category deleted successfully",
+      message: "Product deleted successfully",
     });
   } catch (error) {
-    logger.error("Delete category error", {
+    logger.error("Delete product error", {
       error: error.message,
-      categoryId: req.params.id,
+      productId: req.params.id,
     });
     next(error);
   }
 };
 
-// Restore soft-deleted category
-exports.restoreCategory = async (req, res, next) => {
+// Restore soft-deleted product
+exports.restoreProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const category = await Category.findOne({
+    const product = await Product.findOne({
       where: { id },
       paranoid: false,
     });
 
-    if (!category) {
+    if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Category not found",
+        message: "Product not found",
       });
     }
 
-    if (category.deletedAt === null) {
+    if (product.deletedAt === null) {
       return res.status(400).json({
         success: false,
-        message: "Category is not deleted",
+        message: "Product is not deleted",
       });
     }
 
-    await category.restore();
+    await product.restore();
 
     return res.status(200).json({
       success: true,
-      message: "Category restored successfully",
-      data: category,
+      message: "Product restored successfully",
+      data: product,
     });
   } catch (error) {
-    logger.error("Restore category error", {
+    logger.error("Restore product error", {
       error: error.message,
-      categoryId: req.params.id,
+      productId: req.params.id,
     });
     next(error);
   }

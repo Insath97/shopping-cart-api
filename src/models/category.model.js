@@ -2,7 +2,14 @@ const { DataTypes, Model } = require("sequelize");
 const { sequelize } = require("../config/database");
 const slugify = require("slugify");
 
-class Category extends Model {}
+class Category extends Model {
+  static associate(models) {
+    this.hasMany(models.Product, {
+      foreignKey: "categoryId",
+      as: "products",
+    });
+  }
+}
 
 Category.init(
   {
